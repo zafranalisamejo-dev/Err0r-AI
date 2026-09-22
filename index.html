@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Err0r-AI Pro | Black-Dragon</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body data-theme="dark">
+
+  <!-- Sidebar -->
+  <aside id="sidebar" class="sidebar">
+    <div class="sidebar-header">
+      <div class="logo">
+        <span class="logo-icon">&lt;/&gt;</span>
+        <span class="logo-text">Err0r-AI</span>
+      </div>
+      <button id="close-sidebar" class="icon-btn" title="Close">✕</button>
+    </div>
+    <button id="new-chat-btn" class="new-chat-btn">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+      New Chat
+    </button>
+    <div class="sidebar-section">
+      <div class="section-title">History</div>
+      <div id="history-list" class="history-list"></div>
+    </div>
+    <div class="sidebar-footer">
+      <div class="provider-info">
+        <span class="dot"></span>
+        <span id="provider-badge">Black-Dragon</span>
+      </div>
+      <button id="theme-toggle" class="icon-btn" title="Toggle theme">
+        <svg id="theme-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+      </button>
+    </div>
+  </aside>
+
+  <!-- Overlay for mobile sidebar -->
+  <div id="sidebar-overlay" class="sidebar-overlay hidden"></div>
+
+  <div class="main-wrapper">
+    <header class="app-header">
+      <button id="open-sidebar" class="icon-btn" title="Menu">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+      </button>
+      <div class="header-center">
+        <h1>Err0r-AI <span class="pro-badge">Pro</span></h1>
+        <p class="subtitle">by <a href="https://black-dragon-b8b71.web.app" target="_blank" rel="noopener" class="bd-link">Black-Dragon</a></p>
+      </div>
+      <div class="header-right">
+        <span class="status-pill" id="status-pill">Black-Dragon</span>
+      </div>
+    </header>
+
+    <main id="chat-area" class="chat-area">
+      <div id="welcome" class="welcome">
+        <div class="welcome-icon">&lt;/&gt;</div>
+        <h2>How can I help you today?</h2>
+        <p>Cybersecurity • Ethical tools (lab) • Secure coding</p>
+
+        <div class="section-label">Quick Start</div>
+        <div class="suggestion-grid">
+          <button class="suggestion-card" data-prompt="Explain Nmap and how security professionals use it for network discovery in authorized lab environments. Include basic install on Kali.">
+            <span class="sc-icon">🔍</span>
+            <span>Nmap</span>
+            <small>Network discovery</small>
+          </button>
+          <button class="suggestion-card" data-prompt="What is Wireshark and how do ethical analysts use it for packet analysis in a controlled lab? Include install notes.">
+            <span class="sc-icon">📡</span>
+            <span>Wireshark</span>
+            <small>Packet analysis</small>
+          </button>
+          <button class="suggestion-card" data-prompt="Explain Burp Suite Community for authorized web application testing. How to install and basic workflow.">
+            <span class="sc-icon">🕷️</span>
+            <span>Burp Suite</span>
+            <small>Web app testing</small>
+          </button>
+          <button class="suggestion-card" data-prompt="What is the OWASP Top 10 and how can developers protect against common web vulnerabilities?">
+            <span class="sc-icon">🛡️</span>
+            <span>OWASP Top 10</span>
+            <small>Web security</small>
+          </button>
+        </div>
+
+        <div class="section-label" style="margin-top:24px;">Ethical Tools Lab</div>
+        <div class="suggestion-grid tools-grid">
+          <button class="suggestion-card tool-card" data-prompt="How do I install and use Metasploit Framework ethically in a personal lab (Kali + Metasploitable) for learning only?">
+            <span class="sc-icon">💥</span>
+            <span>Metasploit</span>
+            <small>Lab install</small>
+          </button>
+          <button class="suggestion-card tool-card" data-prompt="Explain John the Ripper and Hashcat for password auditing in authorized environments. Ethical install notes.">
+            <span class="sc-icon">🔑</span>
+            <span>John / Hashcat</span>
+            <small>Password audit</small>
+          </button>
+          <button class="suggestion-card tool-card" data-prompt="What is Nikto and how is it used for web server scanning in authorized tests? Ethical install + concepts.">
+            <span class="sc-icon">🌐</span>
+            <span>Nikto</span>
+            <small>Web server scan</small>
+          </button>
+          <button class="suggestion-card tool-card" data-prompt="Explain Gobuster for directory enumeration in authorized web app testing labs.">
+            <span class="sc-icon">📂</span>
+            <span>Gobuster</span>
+            <small>Dir enumeration</small>
+          </button>
+          <button class="suggestion-card tool-card" data-prompt="How to set up a safe home cybersecurity lab using VirtualBox with Kali Linux and DVWA / Metasploitable? Step-by-step for learning only.">
+            <span class="sc-icon">🖥️</span>
+            <span>Home Lab</span>
+            <small>VirtualBox + Kali</small>
+          </button>
+          <button class="suggestion-card tool-card" data-prompt="Write a secure Python function that sanitizes user input against XSS and SQL injection. Explain each defensive step.">
+            <span class="sc-icon">✍️</span>
+            <span>Secure Code</span>
+            <small>Input sanitization</small>
+          </button>
+        </div>
+      </div>
+
+      <div id="messages" class="messages"></div>
+
+      <!-- Inline typing (WhatsApp style) -->
+      <div id="typing-indicator" class="typing-indicator hidden">
+        <div class="msg-row ai-row">
+          <div class="avatar ai-av">AI</div>
+          <div class="typing-bubble">
+            <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <footer class="input-area">
+      <div id="attach-preview" class="attach-preview hidden"></div>
+
+      <div class="input-box">
+        <!-- Plus menu -->
+        <div class="plus-wrap">
+          <button id="plus-btn" class="tool-btn plus-btn" title="Attach">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>
+          </button>
+          <div id="plus-menu" class="plus-menu hidden">
+            <button class="plus-item" id="menu-camera">
+              <span class="pi-icon">📷</span>
+              <span>Camera</span>
+            </button>
+            <button class="plus-item" id="menu-photo">
+              <span class="pi-icon">🖼️</span>
+              <span>Photo</span>
+            </button>
+            <button class="plus-item" id="menu-file">
+              <span class="pi-icon">📎</span>
+              <span>Files</span>
+            </button>
+            <button class="plus-item" id="menu-plugins">
+              <span class="pi-icon">🔌</span>
+              <span>Plugins / Tools</span>
+            </button>
+          </div>
+        </div>
+
+        <textarea id="prompt-input" rows="1" placeholder="Message Err0r-AI..." autocomplete="off"></textarea>
+
+        <div class="right-tools">
+          <button id="mic-btn" class="tool-btn" title="Voice">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/><path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>
+          </button>
+          <button id="send-btn" class="send-btn" title="Send" disabled>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+          </button>
+        </div>
+      </div>
+      <p class="footer-note">Err0r-AI by <a href="https://black-dragon-b8b71.web.app" target="_blank" rel="noopener" class="bd-link">Black-Dragon</a> · Educational & ethical use only</p>
+    </footer>
+  </div>
+
+  <!-- Hidden inputs -->
+  <input type="file" id="file-input" accept=".txt,.md,.js,.py,.json,.csv,.log,.html,.css,.xml,.sh" hidden>
+  <input type="file" id="image-input" accept="image/*" hidden>
+
+  <!-- Live Camera Modal -->
+  <div id="camera-modal" class="modal hidden">
+    <div class="modal-content camera-modal-content">
+      <div class="modal-header">
+        <h3>Camera</h3>
+        <button id="close-camera" class="icon-btn">✕</button>
+      </div>
+      <video id="camera-video" autoplay playsinline></video>
+      <canvas id="camera-canvas" class="hidden"></canvas>
+      <div class="camera-actions">
+        <button id="capture-btn" class="capture-btn">Capture Photo</button>
+        <button id="switch-cam-btn" class="tool-btn" title="Switch camera">🔄</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Plugins Modal -->
+  <div id="plugins-modal" class="modal hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Ethical Tools</h3>
+        <button id="close-plugins" class="icon-btn">✕</button>
+      </div>
+      <p class="modal-note">Lab / educational use only · Black-Dragon</p>
+      <div class="plugins-grid" id="plugins-grid">
+        <div class="plugin-card" data-prompt="Explain Nmap install and ethical use for network discovery in a lab.">
+          <span class="p-icon">🔍</span>
+          <div><strong>Nmap</strong><small>Network scanner</small></div>
+        </div>
+        <div class="plugin-card" data-prompt="Explain Wireshark install and packet analysis for ethical security learning.">
+          <span class="p-icon">📡</span>
+          <div><strong>Wireshark</strong><small>Packet analysis</small></div>
+        </div>
+        <div class="plugin-card" data-prompt="Explain Burp Suite Community install and authorized web testing workflow.">
+          <span class="p-icon">🕷️</span>
+          <div><strong>Burp Suite</strong><small>Web app testing</small></div>
+        </div>
+        <div class="plugin-card" data-prompt="How to install Metasploit Framework ethically in a Kali lab for learning.">
+          <span class="p-icon">💥</span>
+          <div><strong>Metasploit</strong><small>Lab pentest</small></div>
+        </div>
+        <div class="plugin-card" data-prompt="Explain John the Ripper and Hashcat for authorized password auditing.">
+          <span class="p-icon">🔑</span>
+          <div><strong>John / Hashcat</strong><small>Password audit</small></div>
+        </div>
+        <div class="plugin-card" data-prompt="How to set up a safe home cybersecurity lab with VirtualBox, Kali and DVWA.">
+          <span class="p-icon">🖥️</span>
+          <div><strong>Home Lab</strong><small>VirtualBox + Kali</small></div>
+        </div>
+        <div class="plugin-card" data-prompt="What is the OWASP Top 10 and defensive coding practices against each item?">
+          <span class="p-icon">🛡️</span>
+          <div><strong>OWASP Top 10</strong><small>Defensive checklist</small></div>
+        </div>
+        <div class="plugin-card" data-prompt="Give secure coding tips to prevent XSS, SQLi and CSRF in web apps.">
+          <span class="p-icon">🔒</span>
+          <div><strong>Secure Coding</strong><small>XSS / SQLi</small></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="config.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
