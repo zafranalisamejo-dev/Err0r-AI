@@ -51,7 +51,7 @@
         <p class="subtitle">by <a href="https://black-dragon-b8b71.web.app" target="_blank" rel="noopener" class="bd-link">Black-Dragon</a></p>
       </div>
       <div class="header-right">
-        <span class="status-pill" id="status-pill">Black-Dragon</span>
+        <a href="https://black-dragon-b8b71.web.app" target="_blank" rel="noopener" class="status-pill" id="status-pill" title="Visit Black-Dragon Official Website">Black-Dragon</a>
       </div>
     </header>
 
@@ -59,7 +59,7 @@
       <div id="welcome" class="welcome">
         <div class="welcome-icon">&lt;/&gt;</div>
         <h2>How can I help you today?</h2>
-        <p>Cybersecurity • Ethical tools (lab) • Secure coding</p>
+        <p>Cybersecurity • Ethical tools (lab) • Secure coding • Image analysis</p>
 
         <div class="section-label">Quick Start</div>
         <div class="suggestion-grid">
@@ -149,7 +149,7 @@
             </button>
             <button class="plus-item" id="menu-photo">
               <span class="pi-icon">🖼️</span>
-              <span>Photo</span>
+              <span>Photo / Gallery</span>
             </button>
             <button class="plus-item" id="menu-file">
               <span class="pi-icon">📎</span>
@@ -178,8 +178,8 @@
   </div>
 
   <!-- Hidden inputs -->
-  <input type="file" id="file-input" accept=".txt,.md,.js,.py,.json,.csv,.log,.html,.css,.xml,.sh" hidden>
-  <input type="file" id="image-input" accept="image/*" hidden>
+  <input type="file" id="file-input" accept=".txt,.md,.js,.py,.json,.csv,.log,.html,.css,.xml,.sh,.zip" hidden>
+  <input type="file" id="image-input" accept="image/*" capture="environment" hidden>
 
   <!-- Live Camera Modal -->
   <div id="camera-modal" class="modal hidden">
@@ -188,9 +188,16 @@
         <h3>Camera</h3>
         <button id="close-camera" class="icon-btn">✕</button>
       </div>
-      <video id="camera-video" autoplay playsinline></video>
+      <div class="camera-preview-wrap">
+        <video id="camera-video" autoplay playsinline></video>
+      </div>
       <canvas id="camera-canvas" class="hidden"></canvas>
       <div class="camera-actions">
+        <div class="zoom-controls">
+          <button id="zoom-out-btn" title="Zoom Out">−</button>
+          <span class="zoom-label" id="zoom-label">1.0x</span>
+          <button id="zoom-in-btn" title="Zoom In">+</button>
+        </div>
         <button id="capture-btn" class="capture-btn">Capture Photo</button>
         <button id="switch-cam-btn" class="tool-btn" title="Switch camera">🔄</button>
       </div>

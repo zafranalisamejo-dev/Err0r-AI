@@ -1,5 +1,5 @@
 // ============================================================
-// Err0r-AI Pro – Black-Dragon
+// Err0r-AI Pro – Black-Dragon (Improved Camera + Vision + Theme)
 // ============================================================
 
 let chatMessages = [];
@@ -7,6 +7,10 @@ let isGenerating = false;
 let attachedFiles = [];
 let cameraStream = null;
 let useFrontCamera = false;
+let currentZoom = 1.0;
+const MIN_ZOOM = 1.0;
+const MAX_ZOOM = 3.0;
+const ZOOM_STEP = 0.25;
 
 // DOM
 const chatArea = document.getElementById('chat-area');
@@ -33,6 +37,7 @@ const pluginsModal = document.getElementById('plugins-modal');
 const cameraModal = document.getElementById('camera-modal');
 const cameraVideo = document.getElementById('camera-video');
 const cameraCanvas = document.getElementById('camera-canvas');
+const zoomLabel = document.getElementById('zoom-label');
 
 // ============================================================
 // Init
@@ -85,7 +90,7 @@ function copyCode(btn) {
   });
 }
 
-function addMessage(role, text, skipSave = false) {
+function addMessage(role, text, skipSave = false, images = []) {
   if (welcomeEl && !welcomeEl.classList.contains('hidden')) {
     welcomeEl.classList.add('hidden');
   }
@@ -102,20 +107,45 @@ function addMessage(role, text, skipSave = false) {
 
   const bubble = document.createElement('div');
   bubble.className = 'bubble';
-  if (role === 'user') {
-    bubble.textContent = text;
-  } else {
-    bubble.innerHTML = formatAIResponse(text);
+
+  // Show real photos if any
+  if (images && images.length) {
+    const imgWrap = document.createElement('div');
+    imgWrap.className = 'msg-images';
+    images.forEach(src => {
+      const img = document.createElement('img');
+      img.src = src;
+      img.alt = 'Photo';
+      img.className = 'msg-photo';
+      img.loading = 'lazy';
+      imgWrap.appendChild(img);
+    });
+    bubble.appendChild(imgWrap);
   }
+
+  if (role === 'user') {
+    if (text && text !== '[Photo attached]' && text !== '[Photo attached] 📷') {
+      const txt = document.createElement('div');
+      txt.className = 'msg-text';
+      txt.textContent = text.replace(/\s*📷\s*$/, '').trim();
+      if (txt.textContent) bubble.appendChild(txt);
+    }
+  } else {
+    const contentDiv = document.createElement('div');
+    contentDiv.innerHTML = formatAIResponse(text);
+    bubble.appendChild(contentDiv);
+  }
+
   wrap.appendChild(bubble);
 
   if (role === 'ai') {
     const actions = document.createElement('div');
     actions.className = 'message-actions';
     const speakBtn = document.createElement('button');
-    speakBtn.className = 'action-btn';
+    speakBtn.className = 'action-btn speak-btn';
     speakBtn.textContent = '🔊 Read';
-    speakBtn.onclick = () => speakText(text);
+    speakBtn.dataset.speaking = '0';
+    speakBtn.onclick = () => toggleSpeak(text, speakBtn);
     actions.appendChild(speakBtn);
     const copyBtn = document.createElement('button');
     copyBtn.className = 'action-btn';
@@ -181,27 +211,153 @@ function updateHistoryUI() {
   userMsgs.forEach(msg => {
     const item = document.createElement('div');
     item.className = 'history-item';
-    item.textContent = msg.content.slice(0, 42) + (msg.content.length > 42 ? '…' : '');
-    item.title = msg.content;
+    const preview = typeof msg.content === 'string' ? msg.content : '[Image / mixed]';
+    item.textContent = preview.slice(0, 42) + (preview.length > 42 ? '…' : '');
+    item.title = preview;
     historyList.appendChild(item);
   });
 }
 
 // ============================================================
-// TTS
+// TTS – Read / Pause / Resume + Double-click = Restart
 // ============================================================
-function speakText(text) {
-  window.speechSynthesis.cancel();
-  const clean = text
+let currentUtterance = null;
+let activeSpeakBtn = null;
+let ttsState = 'idle'; // idle | speaking | paused
+let lastClickTime = 0;
+let lastClickBtn = null;
+let currentSpeakText = '';
+
+function resetSpeakBtn(btn) {
+  if (btn) {
+    btn.textContent = '🔊 Read';
+    btn.dataset.speaking = '0';
+  }
+}
+
+function stopSpeaking() {
+  try {
+    window.speechSynthesis.cancel();
+  } catch (e) {}
+  currentUtterance = null;
+  ttsState = 'idle';
+  currentSpeakText = '';
+  if (activeSpeakBtn) {
+    resetSpeakBtn(activeSpeakBtn);
+    activeSpeakBtn = null;
+  }
+}
+
+function startSpeaking(text, btn) {
+  // Fully clean previous state
+  try {
+    window.speechSynthesis.cancel();
+  } catch (e) {}
+
+  const clean = String(text)
     .replace(/```[\s\S]*?```/g, ' [Code] ')
     .replace(/`([^`\n]+)`/g, '$1')
     .replace(/\n/g, ' ');
+
   const u = new SpeechSynthesisUtterance(clean);
   const voices = window.speechSynthesis.getVoices();
   if (voices.length) {
-    u.voice = voices.find(v => v.lang.startsWith('en')) || voices[0];
+    // Prefer cute / female voice
+    const femaleKeywords = ['female', 'woman', 'girl', 'zira', 'samantha', 'susan', 'karen', 'moira', 'tessa', 'fiona', 'veena', 'heera', 'lekha', 'google हिन्दी', 'hindi', 'hi-IN'];
+    let chosen = voices.find(v =>
+      (v.lang.startsWith('en') || v.lang.startsWith('hi')) &&
+      femaleKeywords.some(k => v.name.toLowerCase().includes(k.toLowerCase()))
+    );
+    if (!chosen) {
+      chosen = voices.find(v =>
+        v.name.toLowerCase().includes('female') ||
+        v.name.toLowerCase().includes('woman') ||
+        (v.lang.startsWith('hi') && v.name.toLowerCase().includes('google'))
+      );
+    }
+    if (!chosen) {
+      chosen = voices.find(v => v.lang.startsWith('hi')) || voices.find(v => v.lang.startsWith('en')) || voices[0];
+    }
+    u.voice = chosen;
+    u.pitch = 1.15;
+    u.rate = 0.95;
   }
+
+  u.onend = () => {
+    ttsState = 'idle';
+    currentUtterance = null;
+    currentSpeakText = '';
+    if (btn) resetSpeakBtn(btn);
+    if (activeSpeakBtn === btn) activeSpeakBtn = null;
+  };
+  u.onerror = () => {
+    ttsState = 'idle';
+    currentUtterance = null;
+    currentSpeakText = '';
+    if (btn) resetSpeakBtn(btn);
+    if (activeSpeakBtn === btn) activeSpeakBtn = null;
+  };
+
+  currentUtterance = u;
+  activeSpeakBtn = btn;
+  currentSpeakText = text;
+  ttsState = 'speaking';
+  btn.textContent = '⏸ Pause';
+  btn.dataset.speaking = '1';
   window.speechSynthesis.speak(u);
+}
+
+function toggleSpeak(text, btn) {
+  const now = Date.now();
+  const isDoubleClick = (lastClickBtn === btn && (now - lastClickTime) < 380);
+  lastClickTime = now;
+  lastClickBtn = btn;
+
+  // Double-click → stop completely (back to idle)
+  if (isDoubleClick) {
+    stopSpeaking();
+    return;
+  }
+
+  // Single click logic
+  if (activeSpeakBtn === btn) {
+    if (ttsState === 'speaking') {
+      // Pause
+      try {
+        window.speechSynthesis.pause();
+      } catch (e) {}
+      ttsState = 'paused';
+      btn.textContent = '▶ Resume';
+      btn.dataset.speaking = '1';
+      return;
+    }
+    if (ttsState === 'paused') {
+      // Resume from where paused
+      try {
+        window.speechSynthesis.resume();
+      } catch (e) {
+        // If resume fails, restart from beginning
+        startSpeaking(text, btn);
+        return;
+      }
+      ttsState = 'speaking';
+      btn.textContent = '⏸ Pause';
+      btn.dataset.speaking = '1';
+      return;
+    }
+  }
+
+  // Different button or idle → start fresh
+  if (activeSpeakBtn && activeSpeakBtn !== btn) {
+    stopSpeaking();
+  }
+  startSpeaking(text, btn);
+}
+
+// Keep old name for safety
+function speakText(text) {
+  const fakeBtn = { dataset: { speaking: '0' }, textContent: '' };
+  toggleSpeak(text, fakeBtn);
 }
 
 function scrollToBottom() {
@@ -211,33 +367,65 @@ function scrollToBottom() {
 }
 
 // ============================================================
-// Send
+// Send (with multimodal image support)
 // ============================================================
 async function sendMessage() {
   let userText = promptInput.value.trim();
   if ((!userText && attachedFiles.length === 0) || isGenerating) return;
 
-  if (attachedFiles.length > 0) {
-    const parts = attachedFiles.map(f => {
-      if (f.type && f.type.startsWith('image/')) {
-        return `[Image attached: ${f.name}] (Current model is text-only – please describe what you need from this image.)`;
+  // Build content for API (multimodal if images present)
+  const hasImages = attachedFiles.some(f => f.type && f.type.startsWith('image/') && f.preview);
+  let apiContent;
+  let displayText;
+
+  if (hasImages) {
+    const parts = [];
+    if (userText) {
+      parts.push({ type: 'text', text: userText });
+    } else {
+      parts.push({ type: 'text', text: 'Please analyze this image carefully. Describe what you see, any text, errors, UI, or important details, and tell me what I can do next.' });
+    }
+    attachedFiles.forEach(f => {
+      if (f.type && f.type.startsWith('image/') && f.preview) {
+        parts.push({
+          type: 'image_url',
+          image_url: { url: f.preview }
+        });
+      } else if (f.content && f.content !== '[image]') {
+        parts.push({ type: 'text', text: `--- File: ${f.name} ---\n${f.content}\n--- End ---` });
       }
-      return `--- File: ${f.name} ---\n${f.content}\n--- End ---`;
     });
-    userText = (userText ? userText + '\n\n' : '') + parts.join('\n\n');
+    apiContent = parts;
+    displayText = userText || '';
+  } else {
+    // Text + files only
+    if (attachedFiles.length > 0) {
+      const parts = attachedFiles.map(f => {
+        if (f.type && f.type.startsWith('image/')) {
+          return `[Image: ${f.name}]`;
+        }
+        return `--- File: ${f.name} ---\n${f.content}\n--- End ---`;
+      });
+      userText = (userText ? userText + '\n\n' : '') + parts.join('\n\n');
+    }
+    apiContent = userText;
+    displayText = userText.length > 600 ? userText.slice(0, 600) + '…' : userText;
   }
 
-  const displayText = userText.length > 600 ? userText.slice(0, 600) + '…' : userText;
+  // Collect real image previews to show in chat
+  const imagePreviews = attachedFiles
+    .filter(f => f.type && f.type.startsWith('image/') && f.preview)
+    .map(f => f.preview);
 
   promptInput.value = '';
   autoResize();
   sendBtn.disabled = true;
   clearAttachments();
 
-  addMessage('user', displayText);
-  // keep full text in history for API
+  addMessage('user', displayText, false, imagePreviews);
+  // Keep full content in history
   if (chatMessages.length && chatMessages[chatMessages.length - 1].role === 'user') {
-    chatMessages[chatMessages.length - 1].content = userText;
+    chatMessages[chatMessages.length - 1].content = typeof apiContent === 'string' ? apiContent : displayText;
     saveHistory();
   }
 
@@ -249,12 +437,12 @@ async function sendMessage() {
   if (statusPill) statusPill.textContent = 'Thinking…';
 
   try {
-    const response = await getAIResponse(userText);
+    const response = await getAIResponse(apiContent);
     addMessage('ai', response);
   } catch (err) {
     console.error(err);
     addMessage('ai', '⚠️ Error: ' + (err.message || 'Unknown error') +
-      '\n\nTips:\n• Check API key in config.js\n• Model must be openai/gpt-oss-20b\n• Check network / rate limits');
+      '\n\nTips:\n• Check API key in config.js\n• Vision model: qwen/qwen3.8-27b\n• Check network / rate limits');
   } finally {
     isGenerating = false;
     if (typingIndicator) typingIndicator.classList.add('hidden');
@@ -267,19 +455,39 @@ async function sendMessage() {
 // ============================================================
 // API
 // ============================================================
-async function getAIResponse(userText) {
+async function getAIResponse(userContent) {
   const provider = CONFIG.API_PROVIDER;
-  if (provider === 'mock') return mockResponse(userText);
-  if (provider === 'openai') return callOpenAI(userText);
-  if (provider === 'gemini') return callGemini(userText);
-  if (provider === 'groq') return callGroq(userText);
+  if (provider === 'mock') return mockResponse(typeof userContent === 'string' ? userContent : '[image]');
+  if (provider === 'openai') return callOpenAI(userContent);
+  if (provider === 'gemini') return callGemini(userContent);
+  if (provider === 'groq') return callGroq(userContent);
   throw new Error('Unknown provider: ' + provider);
 }
 
-async function callGroq(userText) {
+async function callGroq(userContent) {
   if (!CONFIG.API_KEY || CONFIG.API_KEY.includes('YOUR_')) {
     throw new Error('Set your Groq API key in config.js');
   }
+
+  // Build messages – support multimodal content
+  const messages = [
+    { role: 'system', content: CONFIG.SYSTEM_PROMPT }
+  ];
+
+  // Previous text-only history
+  chatMessages.slice(0, -1).forEach(m => {
+    messages.push({
+      role: m.role,
+      content: typeof m.content === 'string' ? m.content : String(m.content)
+    });
+  });
+
+  // Current user message (can be string or array of parts)
+  messages.push({
+    role: 'user',
+    content: userContent
+  });
+
   const res = await fetch(CONFIG.API_ENDPOINT.groq, {
     method: 'POST',
     headers: {
@@ -290,13 +498,10 @@ async function callGroq(userText) {
       model: CONFIG.MODEL.groq,
       temperature: CONFIG.TEMPERATURE,
       max_tokens: CONFIG.MAX_TOKENS,
-      messages: [
-        { role: 'system', content: CONFIG.SYSTEM_PROMPT },
-        ...chatMessages.slice(0, -1),
-        { role: 'user', content: userText }
-      ]
+      messages
     })
   });
+
   if (!res.ok) {
     const err = await res.text();
     throw new Error('Groq ' + res.status + ': ' + err);
@@ -305,7 +510,7 @@ async function callGroq(userText) {
   return data.choices[0].message.content;
 }
 
-async function callOpenAI(userText) {
+async function callOpenAI(userContent) {
   const res = await fetch(CONFIG.API_ENDPOINT.openai, {
     method: 'POST',
     headers: {
@@ -319,7 +524,7 @@ async function callOpenAI(userText) {
       messages: [
         { role: 'system', content: CONFIG.SYSTEM_PROMPT },
         ...chatMessages.slice(0, -1),
-        { role: 'user', content: userText }
+        { role: 'user', content: userContent }
       ]
     })
   });
@@ -328,13 +533,14 @@ async function callOpenAI(userText) {
   return data.choices[0].message.content;
 }
 
-async function callGemini(userText) {
+async function callGemini(userContent) {
   const url = CONFIG.API_ENDPOINT.gemini + '?key=' + CONFIG.API_KEY;
+  const text = typeof userContent === 'string' ? userContent : JSON.stringify(userContent);
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      contents: [{ parts: [{ text: CONFIG.SYSTEM_PROMPT + '\n\nUser: ' + userText }] }],
+      contents: [{ parts: [{ text: CONFIG.SYSTEM_PROMPT + '\n\nUser: ' + text }] }],
       generationConfig: { temperature: CONFIG.TEMPERATURE, maxOutputTokens: CONFIG.MAX_TOKENS }
     })
   });
@@ -346,7 +552,7 @@ async function callGemini(userText) {
 function mockResponse(userText) {
   return new Promise(r => {
     setTimeout(() => {
-      r('**Demo Mode**\n\nYou asked about: "' + userText.slice(0, 60) + '..."\n\nPut a real Groq key in config.js to get live answers.\nModel: `openai/gpt-oss-20b`');
+      r('**Demo Mode**\n\nYou asked about: "' + String(userText).slice(0, 60) + '..."\n\nPut a real Groq key in config.js to get live answers.\nModel: `qwen/qwen3.8-27b` (vision ready)');
     }, CONFIG.MOCK_DELAY);
   });
 }
@@ -357,8 +563,8 @@ function mockResponse(userText) {
 function handleFileSelect(e, isImage) {
   const files = Array.from(e.target.files || []);
   files.forEach(file => {
-    if (file.size > 3 * 1024 * 1024) {
-      alert('Max 3MB per file');
+    if (file.size > 8 * 1024 * 1024) {
+      alert('Max 8MB per file (for images)');
       return;
     }
     const reader = new FileReader();
@@ -407,23 +613,30 @@ function clearAttachments() {
 }
 
 // ============================================================
-// Live Camera
+// Live Camera + Zoom
 // ============================================================
 async function openCamera() {
   try {
     if (cameraStream) {
       cameraStream.getTracks().forEach(t => t.stop());
     }
+    currentZoom = 1.0;
+    updateZoomUI();
     const constraints = {
-      video: { facingMode: useFrontCamera ? 'user' : 'environment' },
+      video: {
+        facingMode: useFrontCamera ? 'user' : 'environment',
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
+      },
       audio: false
     };
     cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
     cameraVideo.srcObject = cameraStream;
+    cameraVideo.style.transform = `scale(${currentZoom})`;
     cameraModal.classList.remove('hidden');
   } catch (err) {
     console.error(err);
-    alert('Camera access denied or not available. Falling back to file picker.');
+    alert('Camera access denied or not available. Opening gallery instead.');
     imageInput.click();
   }
 }
@@ -434,18 +647,55 @@ function closeCamera() {
     cameraStream = null;
   }
   cameraVideo.srcObject = null;
+  cameraVideo.style.transform = 'scale(1)';
+  currentZoom = 1.0;
+  updateZoomUI();
   cameraModal.classList.add('hidden');
+}
+
+function updateZoomUI() {
+  if (zoomLabel) zoomLabel.textContent = currentZoom.toFixed(1) + 'x';
+  if (cameraVideo) {
+    cameraVideo.style.transform = `scale(${currentZoom})`;
+  }
+}
+
+function zoomIn() {
+  if (currentZoom < MAX_ZOOM) {
+    currentZoom = Math.min(MAX_ZOOM, currentZoom + ZOOM_STEP);
+    updateZoomUI();
+  }
+}
+
+function zoomOut() {
+  if (currentZoom > MIN_ZOOM) {
+    currentZoom = Math.max(MIN_ZOOM, currentZoom - ZOOM_STEP);
+    updateZoomUI();
+  }
 }
 
 function capturePhoto() {
   if (!cameraStream) return;
   const video = cameraVideo;
   const canvas = cameraCanvas;
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
+  const w = video.videoWidth;
+  const h = video.videoHeight;
+  canvas.width = w;
+  canvas.height = h;
   const ctx = canvas.getContext('2d');
-  ctx.drawImage(video, 0, 0);
-  const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+
+  // Apply digital zoom by cropping center
+  if (currentZoom > 1) {
+    const sw = w / currentZoom;
+    const sh = h / currentZoom;
+    const sx = (w - sw) / 2;
+    const sy = (h - sh) / 2;
+    ctx.drawImage(video, sx, sy, sw, sh, 0, 0, w, h);
+  } else {
+    ctx.drawImage(video, 0, 0, w, h);
+  }
+
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
   const name = 'camera-' + Date.now() + '.jpg';
   attachedFiles.push({
     name,
@@ -549,6 +799,8 @@ if (SpeechRecognition) {
 
 function toggleRecording() {
   if (!recognition) return;
+  // Stop any ongoing Read/TTS when mic is used
+  if (typeof stopSpeaking === 'function') stopSpeaking();
   if (isRecording) recognition.stop();
   else recognition.start();
 }
@@ -595,6 +847,8 @@ imageInput.addEventListener('change', (e) => handleFileSelect(e, true));
 document.getElementById('close-camera').addEventListener('click', closeCamera);
 document.getElementById('capture-btn').addEventListener('click', capturePhoto);
 document.getElementById('switch-cam-btn').addEventListener('click', switchCamera);
+document.getElementById('zoom-in-btn').addEventListener('click', zoomIn);
+document.getElementById('zoom-out-btn').addEventListener('click', zoomOut);
 cameraModal.addEventListener('click', (e) => {
   if (e.target === cameraModal) closeCamera();
 });
@@ -646,7 +900,7 @@ if (plusBtn && plusMenu) {
   });
   document.getElementById('menu-photo').addEventListener('click', () => {
     closePlusMenu();
-    imageInput.click();
+    imageInput.click(); // opens phone gallery / file picker
   });
   document.getElementById('menu-file').addEventListener('click', () => {
     closePlusMenu();
