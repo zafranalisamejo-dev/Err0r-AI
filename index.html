@@ -162,7 +162,7 @@
           </div>
         </div>
 
-        <textarea id="prompt-input" rows="1" placeholder="Message Err0r-AI..." autocomplete="off"></textarea>
+        <textarea id="prompt-input" rows="1" placeholder="Message Err0r-AI… (Enter to send)" autocomplete="off"></textarea>
 
         <div class="right-tools">
           <button id="mic-btn" class="tool-btn" title="Voice">
@@ -179,7 +179,8 @@
 
   <!-- Hidden inputs -->
   <input type="file" id="file-input" accept=".txt,.md,.js,.py,.json,.csv,.log,.html,.css,.xml,.sh,.zip" hidden>
-  <input type="file" id="image-input" accept="image/*" capture="environment" hidden>
+  <!-- No capture attribute → opens Gallery / Google Photos / file picker (not camera) -->
+  <input type="file" id="image-input" accept="image/*" multiple hidden>
 
   <!-- Live Camera Modal -->
   <div id="camera-modal" class="modal hidden">

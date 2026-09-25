@@ -67,19 +67,44 @@ function escapeHtml(text) {
 }
 
 function formatAIResponse(text) {
-  let escaped = escapeHtml(text);
-  const codeBlockRegex = /```([\w+-]*)\n?([\s\S]*?)```/g;
-  escaped = escaped.replace(codeBlockRegex, (_, lang, code) => {
-    return renderCodeBlock(lang || 'text', code);
+  // Extract code blocks first (before HTML escape) so code stays raw then gets escaped inside
+  const blocks = [];
+  let work = String(text).replace(/```([\w+-]*)\n?([\s\S]*?)```/g, (_, lang, code) => {
+    const id = blocks.length;
+    blocks.push({ lang: lang || 'text', code: code.replace(/\n$/, '') });
+    return `\n%%CODEBLOCK_${id}%%\n`;
   });
-  escaped = escaped.replace(/`([^`\n]+)`/g, '<code style="background:var(--bg-input);padding:2px 6px;border-radius:5px;font-family:var(--mono);font-size:13px;">$1</code>');
-  escaped = escaped.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-  return escaped.replace(/\n/g, '<br>');
+
+  work = escapeHtml(work);
+
+  // Inline code
+  work = work.replace(/`([^`\n]+)`/g, '<code class="inline-code">$1</code>');
+  // Bold + italic
+  work = work.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  work = work.replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, '<em>$1</em>');
+  // Simple headers
+  work = work.replace(/^### (.+)$/gm, '<div class="md-h3">$1</div>');
+  work = work.replace(/^## (.+)$/gm, '<div class="md-h2">$1</div>');
+  work = work.replace(/^# (.+)$/gm, '<div class="md-h1">$1</div>');
+  // Unordered lists
+  work = work.replace(/^[\-\*] (.+)$/gm, '<div class="md-li">• $1</div>');
+  // Numbered lists
+  work = work.replace(/^\d+\. (.+)$/gm, '<div class="md-li">$1</div>');
+  // Links [text](url)
+  work = work.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener" class="md-link">$1</a>');
+
+  // Restore code blocks (code is escaped for safety)
+  work = work.replace(/%%CODEBLOCK_(\d+)%%/g, (_, i) => {
+    const b = blocks[+i];
+    return renderCodeBlock(b.lang, b.code);
+  });
+
+  return work.replace(/\n/g, '<br>');
 }
 
 function renderCodeBlock(language, code) {
-  const trimmed = code.replace(/\n$/, '');
-  return `<div class="code-block"><div class="code-header"><span>${language}</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>${trimmed}</code></pre></div>`;
+  const safe = escapeHtml(code);
+  return `<div class="code-block"><div class="code-header"><span>${escapeHtml(language)}</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div><pre><code>${safe}</code></pre></div>`;
 }
 
 function copyCode(btn) {
@@ -87,7 +112,31 @@ function copyCode(btn) {
   navigator.clipboard.writeText(code).then(() => {
     btn.textContent = 'Copied!';
     setTimeout(() => (btn.textContent = 'Copy'), 1500);
+  }).catch(() => {
+    // fallback
+    btn.textContent = 'Failed';
+    setTimeout(() => (btn.textContent = 'Copy'), 1500);
   });
+}
+
+// Lightweight toast (no more alert popups)
+function showToast(message, type = 'info') {
+  let host = document.getElementById('toast-host');
+  if (!host) {
+    host = document.createElement('div');
+    host.id = 'toast-host';
+    host.className = 'toast-host';
+    document.body.appendChild(host);
+  }
+  const t = document.createElement('div');
+  t.className = 'toast toast-' + type;
+  t.textContent = message;
+  host.appendChild(t);
+  requestAnimationFrame(() => t.classList.add('show'));
+  setTimeout(() => {
+    t.classList.remove('show');
+    setTimeout(() => t.remove(), 280);
+  }, 2800);
 }
 
 function addMessage(role, text, skipSave = false, images = []) {
@@ -97,6 +146,10 @@ function addMessage(role, text, skipSave = false, images = []) {
 
   const row = document.createElement('div');
   row.className = `msg-row ${role === 'user' ? 'user-row' : 'ai-row'}`;
+  // Unique id so history can scroll to this message
+  const msgId = 'msg-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+  row.id = msgId;
+  row.dataset.role = role === 'user' ? 'user' : 'assistant';
 
   const avatar = document.createElement('div');
   avatar.className = `avatar ${role === 'user' ? 'user-av' : 'ai-av'}`;
@@ -164,9 +217,13 @@ function addMessage(role, text, skipSave = false, images = []) {
   messagesEl.appendChild(row);
 
   if (!skipSave) {
-    chatMessages.push({ role: role === 'user' ? 'user' : 'assistant', content: text });
+    chatMessages.push({ role: role === 'user' ? 'user' : 'assistant', content: text, msgId });
     saveHistory();
     updateHistoryUI();
+  } else {
+    // When loading from history, always bind fresh DOM id so history click works
+    const last = chatMessages[chatMessages.length - 1];
+    if (last) last.msgId = msgId;
   }
 
   scrollToBottom();
@@ -192,12 +249,25 @@ function loadHistory() {
     chatMessages = [];
     history.forEach(msg => {
       const uiRole = msg.role === 'user' ? 'user' : 'ai';
-      addMessage(uiRole, msg.content, true);
+      // push first so addMessage (skipSave) can attach msgId back
       chatMessages.push(msg);
+      addMessage(uiRole, msg.content, true);
     });
   } catch (e) {
     console.error('Load history failed', e);
   }
+}
+
+function scrollToMessage(msgId) {
+  if (!msgId) return;
+  const el = document.getElementById(msgId);
+  if (!el) return;
+  // Close sidebar on mobile so user sees the message
+  closeSidebar();
+  // Highlight briefly
+  el.classList.add('history-highlight');
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  setTimeout(() => el.classList.remove('history-highlight'), 1800);
 }
 
 function updateHistoryUI() {
@@ -214,19 +284,41 @@ function updateHistoryUI() {
     const preview = typeof msg.content === 'string' ? msg.content : '[Image / mixed]';
     item.textContent = preview.slice(0, 42) + (preview.length > 42 ? '…' : '');
     item.title = preview;
+    item.style.cursor = 'pointer';
+    // Click → jump to that message in chat
+    item.addEventListener('click', () => {
+      if (msg.msgId) {
+        scrollToMessage(msg.msgId);
+      } else {
+        // Fallback: find by matching text content
+        const rows = messagesEl.querySelectorAll('.msg-row.user-row');
+        for (const row of rows) {
+          const txt = row.querySelector('.msg-text');
+          if (txt && preview.startsWith(txt.textContent.slice(0, 30))) {
+            closeSidebar();
+            row.classList.add('history-highlight');
+            row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            setTimeout(() => row.classList.remove('history-highlight'), 1800);
+            break;
+          }
+        }
+      }
+    });
     historyList.appendChild(item);
   });
 }
 
 // ============================================================
-// TTS – Read / Pause / Resume + Double-click = Restart
+// TTS – Read / Stop (reliable). Single click = start/stop.
+// Double-click also forces stop + reset. No unreliable pause/resume.
 // ============================================================
 let currentUtterance = null;
 let activeSpeakBtn = null;
-let ttsState = 'idle'; // idle | speaking | paused
+let ttsState = 'idle'; // idle | speaking
 let lastClickTime = 0;
 let lastClickBtn = null;
 let currentSpeakText = '';
+let speakClickTimer = null;
 
 function resetSpeakBtn(btn) {
   if (btn) {
@@ -239,6 +331,10 @@ function stopSpeaking() {
   try {
     window.speechSynthesis.cancel();
   } catch (e) {}
+  // Chrome sometimes needs a tiny delay before next speak works
+  try {
+    window.speechSynthesis.resume(); // clear any stuck paused state
+  } catch (e) {}
   currentUtterance = null;
   ttsState = 'idle';
   currentSpeakText = '';
@@ -248,40 +344,53 @@ function stopSpeaking() {
   }
 }
 
+function pickVoice() {
+  const voices = window.speechSynthesis.getVoices() || [];
+  if (!voices.length) return null;
+  const femaleKeywords = ['female', 'woman', 'girl', 'zira', 'samantha', 'susan', 'karen', 'moira', 'tessa', 'fiona', 'veena', 'heera', 'lekha', 'google हिन्दी', 'hindi', 'hi-IN'];
+  let chosen = voices.find(v =>
+    (v.lang.startsWith('en') || v.lang.startsWith('hi')) &&
+    femaleKeywords.some(k => v.name.toLowerCase().includes(k.toLowerCase()))
+  );
+  if (!chosen) {
+    chosen = voices.find(v =>
+      v.name.toLowerCase().includes('female') ||
+      v.name.toLowerCase().includes('woman') ||
+      (v.lang.startsWith('hi') && v.name.toLowerCase().includes('google'))
+    );
+  }
+  if (!chosen) {
+    chosen = voices.find(v => v.lang.startsWith('hi')) || voices.find(v => v.lang.startsWith('en')) || voices[0];
+  }
+  return chosen;
+}
+
 function startSpeaking(text, btn) {
-  // Fully clean previous state
+  // Fully clean previous state so next speak always works
   try {
     window.speechSynthesis.cancel();
+  } catch (e) {}
+  try {
+    window.speechSynthesis.resume();
   } catch (e) {}
 
   const clean = String(text)
     .replace(/```[\s\S]*?```/g, ' [Code] ')
     .replace(/`([^`\n]+)`/g, '$1')
-    .replace(/\n/g, ' ');
+    .replace(/\n+/g, '. ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!clean) return;
 
   const u = new SpeechSynthesisUtterance(clean);
-  const voices = window.speechSynthesis.getVoices();
-  if (voices.length) {
-    // Prefer cute / female voice
-    const femaleKeywords = ['female', 'woman', 'girl', 'zira', 'samantha', 'susan', 'karen', 'moira', 'tessa', 'fiona', 'veena', 'heera', 'lekha', 'google हिन्दी', 'hindi', 'hi-IN'];
-    let chosen = voices.find(v =>
-      (v.lang.startsWith('en') || v.lang.startsWith('hi')) &&
-      femaleKeywords.some(k => v.name.toLowerCase().includes(k.toLowerCase()))
-    );
-    if (!chosen) {
-      chosen = voices.find(v =>
-        v.name.toLowerCase().includes('female') ||
-        v.name.toLowerCase().includes('woman') ||
-        (v.lang.startsWith('hi') && v.name.toLowerCase().includes('google'))
-      );
-    }
-    if (!chosen) {
-      chosen = voices.find(v => v.lang.startsWith('hi')) || voices.find(v => v.lang.startsWith('en')) || voices[0];
-    }
-    u.voice = chosen;
-    u.pitch = 1.15;
-    u.rate = 0.95;
+  const voice = pickVoice();
+  if (voice) {
+    u.voice = voice;
+    u.lang = voice.lang || 'en-US';
   }
+  u.pitch = 1.1;
+  u.rate = 0.95;
 
   u.onend = () => {
     ttsState = 'idle';
@@ -290,7 +399,9 @@ function startSpeaking(text, btn) {
     if (btn) resetSpeakBtn(btn);
     if (activeSpeakBtn === btn) activeSpeakBtn = null;
   };
-  u.onerror = () => {
+  u.onerror = (ev) => {
+    // 'interrupted' is normal when we cancel; ignore it
+    if (ev && ev.error === 'interrupted') return;
     ttsState = 'idle';
     currentUtterance = null;
     currentSpeakText = '';
@@ -302,62 +413,67 @@ function startSpeaking(text, btn) {
   activeSpeakBtn = btn;
   currentSpeakText = text;
   ttsState = 'speaking';
-  btn.textContent = '⏸ Pause';
-  btn.dataset.speaking = '1';
-  window.speechSynthesis.speak(u);
+  if (btn) {
+    btn.textContent = '⏹ Stop';
+    btn.dataset.speaking = '1';
+  }
+
+  // Small delay helps after cancel() on some browsers
+  setTimeout(() => {
+    try {
+      window.speechSynthesis.speak(u);
+    } catch (e) {
+      console.warn('speak failed', e);
+      stopSpeaking();
+    }
+  }, 40);
 }
 
 function toggleSpeak(text, btn) {
   const now = Date.now();
-  const isDoubleClick = (lastClickBtn === btn && (now - lastClickTime) < 380);
+  const isDoubleClick = (lastClickBtn === btn && (now - lastClickTime) < 400);
   lastClickTime = now;
   lastClickBtn = btn;
 
-  // Double-click → stop completely (back to idle)
+  // Double-click → force full stop + reset (always works)
   if (isDoubleClick) {
+    if (speakClickTimer) {
+      clearTimeout(speakClickTimer);
+      speakClickTimer = null;
+    }
     stopSpeaking();
     return;
   }
 
-  // Single click logic
-  if (activeSpeakBtn === btn) {
-    if (ttsState === 'speaking') {
-      // Pause
-      try {
-        window.speechSynthesis.pause();
-      } catch (e) {}
-      ttsState = 'paused';
-      btn.textContent = '▶ Resume';
-      btn.dataset.speaking = '1';
-      return;
-    }
-    if (ttsState === 'paused') {
-      // Resume from where paused
-      try {
-        window.speechSynthesis.resume();
-      } catch (e) {
-        // If resume fails, restart from beginning
-        startSpeaking(text, btn);
-        return;
-      }
-      ttsState = 'speaking';
-      btn.textContent = '⏸ Pause';
-      btn.dataset.speaking = '1';
-      return;
-    }
-  }
+  // Debounce single click slightly so double-click can cancel the first action
+  if (speakClickTimer) clearTimeout(speakClickTimer);
+  speakClickTimer = setTimeout(() => {
+    speakClickTimer = null;
 
-  // Different button or idle → start fresh
-  if (activeSpeakBtn && activeSpeakBtn !== btn) {
-    stopSpeaking();
-  }
-  startSpeaking(text, btn);
+    // Same button already speaking → stop
+    if (activeSpeakBtn === btn && ttsState === 'speaking') {
+      stopSpeaking();
+      return;
+    }
+
+    // Different button or idle → start this one
+    if (activeSpeakBtn && activeSpeakBtn !== btn) {
+      stopSpeaking();
+    }
+    startSpeaking(text, btn);
+  }, 220);
 }
 
 // Keep old name for safety
 function speakText(text) {
   const fakeBtn = { dataset: { speaking: '0' }, textContent: '' };
   toggleSpeak(text, fakeBtn);
+}
+
+// Voices load async on many browsers
+if (typeof window !== 'undefined' && window.speechSynthesis) {
+  window.speechSynthesis.onvoiceschanged = () => { /* voices ready */ };
+  try { window.speechSynthesis.getVoices(); } catch (e) {}
 }
 
 function scrollToBottom() {
@@ -372,6 +488,15 @@ function scrollToBottom() {
 async function sendMessage() {
   let userText = promptInput.value.trim();
   if ((!userText && attachedFiles.length === 0) || isGenerating) return;
+
+  // Stop any ongoing TTS when sending
+  if (typeof stopSpeaking === 'function') stopSpeaking();
+
+  // Offline check
+  if (!navigator.onLine) {
+    showToast('Internet nahi hai. Connection check karo.', 'error');
+    return;
+  }
 
   // Build content for API (multimodal if images present)
   const hasImages = attachedFiles.some(f => f.type && f.type.startsWith('image/') && f.preview);
@@ -396,7 +521,7 @@ async function sendMessage() {
       }
     });
     apiContent = parts;
-    displayText = userText || '';
+    displayText = userText || '📷 Photo';
   } else {
     // Text + files only
     if (attachedFiles.length > 0) {
@@ -440,16 +565,52 @@ async function sendMessage() {
     const response = await getAIResponse(apiContent);
     addMessage('ai', response);
   } catch (err) {
-    console.error(err);
-    addMessage('ai', '⚠️ Error: ' + (err.message || 'Unknown error') +
-      '\n\nTips:\n• Check API key in config.js\n• Vision model: qwen/qwen3.8-27b\n• Check network / rate limits');
+    console.error(err); // full error only in browser console (for developer)
+    addMessage('ai', friendlyErrorMessage(err));
   } finally {
     isGenerating = false;
     if (typingIndicator) typingIndicator.classList.add('hidden');
     sendBtn.disabled = false;
     if (statusPill) statusPill.textContent = 'Black-Dragon';
     updateSendButton();
+    promptInput.focus();
   }
+}
+
+/** User-facing error only — no API keys, model names, or raw JSON */
+function friendlyErrorMessage(err) {
+  const msg = String(err && err.message ? err.message : err || '').toLowerCase();
+
+  // Rate limit / 429
+  if (msg.includes('429') || msg.includes('rate limit') || msg.includes('rate_limit') || msg.includes('tokens per minute') || msg.includes('otpm')) {
+    return '⏳ Server busy hai. Thodi der (10–15 sec) baad dubara try karo.';
+  }
+
+  // Network / fetch failures
+  if (
+    msg.includes('failed to fetch') ||
+    msg.includes('network') ||
+    msg.includes('net::') ||
+    msg.includes('load failed') ||
+    msg.includes('networkerror') ||
+    msg.includes('timeout') ||
+    msg.includes('offline')
+  ) {
+    return '📡 Network problem. Apna internet connection check karo aur dubara try karo.';
+  }
+
+  // Auth / API key issues
+  if (msg.includes('401') || msg.includes('403') || msg.includes('invalid api') || msg.includes('api key') || msg.includes('unauthorized')) {
+    return '🔑 Connection issue. Thodi der baad try karo.';
+  }
+
+  // Server errors
+  if (msg.includes('500') || msg.includes('502') || msg.includes('503') || msg.includes('504')) {
+    return '🛠️ Server temporarily down hai. Thodi der baad try karo.';
+  }
+
+  // Generic fallback — still no technical dump
+  return '⚠️ Kuch problem aa gayi. Internet check karo aur thodi der baad dubara try karo.';
 }
 
 // ============================================================
@@ -560,27 +721,39 @@ function mockResponse(userText) {
 // ============================================================
 // Attachments
 // ============================================================
-function handleFileSelect(e, isImage) {
-  const files = Array.from(e.target.files || []);
+function addFilesFromList(fileList, forceImage) {
+  const files = Array.from(fileList || []);
+  if (!files.length) return;
   files.forEach(file => {
+    const isImg = forceImage || (file.type && file.type.startsWith('image/'));
     if (file.size > 8 * 1024 * 1024) {
-      alert('Max 8MB per file (for images)');
+      showToast('Max 8MB per file', 'error');
+      return;
+    }
+    // Skip non-text for file mode (except images)
+    if (!isImg && file.type && !file.type.startsWith('text/') && !/\.(txt|md|js|py|json|csv|log|html|css|xml|sh)$/i.test(file.name)) {
+      showToast('Unsupported file type: ' + file.name, 'error');
       return;
     }
     const reader = new FileReader();
     reader.onload = (ev) => {
       attachedFiles.push({
-        name: file.name,
-        type: file.type,
-        content: isImage ? '[image]' : ev.target.result,
-        preview: isImage ? ev.target.result : null
+        name: file.name || (isImg ? 'photo.jpg' : 'file.txt'),
+        type: file.type || (isImg ? 'image/jpeg' : 'text/plain'),
+        content: isImg ? '[image]' : ev.target.result,
+        preview: isImg ? ev.target.result : null
       });
       renderAttachPreview();
       updateSendButton();
     };
-    if (isImage) reader.readAsDataURL(file);
+    reader.onerror = () => showToast('File read failed', 'error');
+    if (isImg) reader.readAsDataURL(file);
     else reader.readAsText(file);
   });
+}
+
+function handleFileSelect(e, isImage) {
+  addFilesFromList(e.target.files, isImage);
   e.target.value = '';
 }
 
@@ -726,6 +899,11 @@ function updateSendButton() {
 }
 
 function resetChat() {
+  if (chatMessages.length > 0) {
+    const ok = confirm('Purani chat clear karna hai?');
+    if (!ok) return;
+  }
+  if (typeof stopSpeaking === 'function') stopSpeaking();
   chatMessages = [];
   localStorage.removeItem('err0r-ai-history');
   messagesEl.innerHTML = '';
@@ -737,6 +915,7 @@ function resetChat() {
   updateHistoryUI();
   promptInput.focus();
   closeSidebar();
+  showToast('New chat started', 'info');
 }
 
 function openSidebar() {
@@ -817,12 +996,73 @@ promptInput.addEventListener('input', () => {
   autoResize();
   updateSendButton();
 });
+// Enter = send · Shift+Enter = new line (ChatGPT style)
 promptInput.addEventListener('keydown', (e) => {
-  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+  if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
     sendMessage();
   }
 });
+
+// Paste image from clipboard (Ctrl+V / long-press paste)
+promptInput.addEventListener('paste', (e) => {
+  const items = e.clipboardData && e.clipboardData.items;
+  if (!items) return;
+  const imageFiles = [];
+  for (const item of items) {
+    if (item.type && item.type.startsWith('image/')) {
+      const f = item.getAsFile();
+      if (f) imageFiles.push(f);
+    }
+  }
+  if (imageFiles.length) {
+    e.preventDefault();
+    addFilesFromList(imageFiles, true);
+    showToast('Photo pasted', 'info');
+  }
+});
+
+// Drag & drop images / files onto chat area
+['dragenter', 'dragover'].forEach(ev => {
+  chatArea.addEventListener(ev, (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    chatArea.classList.add('drag-over');
+  });
+});
+['dragleave', 'drop'].forEach(ev => {
+  chatArea.addEventListener(ev, (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    chatArea.classList.remove('drag-over');
+  });
+});
+chatArea.addEventListener('drop', (e) => {
+  const files = e.dataTransfer && e.dataTransfer.files;
+  if (files && files.length) {
+    addFilesFromList(files, false);
+    showToast(files.length + ' file(s) attached', 'info');
+  }
+});
+
+// Escape closes modals / sidebar / plus menu
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  if (!cameraModal.classList.contains('hidden')) {
+    closeCamera();
+    return;
+  }
+  if (!pluginsModal.classList.contains('hidden')) {
+    pluginsModal.classList.add('hidden');
+    return;
+  }
+  closePlusMenu();
+  closeSidebar();
+});
+
+// Online / offline
+window.addEventListener('online', () => showToast('Internet wapas aa gaya', 'success'));
+window.addEventListener('offline', () => showToast('Internet disconnect ho gaya', 'error'));
 
 // Suggestion cards
 document.querySelectorAll('.suggestion-card').forEach(card => {
