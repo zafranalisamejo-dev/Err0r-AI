@@ -625,6 +625,10 @@ async function getAIResponse(userContent) {
   throw new Error('Unknown provider: ' + provider);
 }
 
+function sleep(ms) {
+  return new Promise(r => setTimeout(r, ms));
+}
+
 async function callGroq(userContent) {
   if (!CONFIG.API_KEY || CONFIG.API_KEY.includes('YOUR_')) {
     throw new Error('Set your Groq API key in config.js');
@@ -635,8 +639,9 @@ async function callGroq(userContent) {
     { role: 'system', content: CONFIG.SYSTEM_PROMPT }
   ];
 
-  // Previous text-only history
-  chatMessages.slice(0, -1).forEach(m => {
+  // Previous text-only history (keep last ~12 turns to reduce tokens)
+  const prior = chatMessages.slice(0, -1).slice(-12);
+  prior.forEach(m => {
     messages.push({
       role: m.role,
       content: typeof m.content === 'string' ? m.content : String(m.content)
@@ -649,26 +654,49 @@ async function callGroq(userContent) {
     content: userContent
   });
 
-  const res = await fetch(CONFIG.API_ENDPOINT.groq, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${CONFIG.API_KEY}`
-    },
-    body: JSON.stringify({
-      model: CONFIG.MODEL.groq,
-      temperature: CONFIG.TEMPERATURE,
-      max_tokens: CONFIG.MAX_TOKENS,
-      messages
-    })
+  const body = JSON.stringify({
+    model: CONFIG.MODEL.groq,
+    temperature: CONFIG.TEMPERATURE,
+    max_tokens: CONFIG.MAX_TOKENS,
+    messages
   });
 
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error('Groq ' + res.status + ': ' + err);
+  // Auto-retry on rate limit (429) up to 3 times
+  const maxAttempts = 3;
+  let lastErr = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const res = await fetch(CONFIG.API_ENDPOINT.groq, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${CONFIG.API_KEY}`
+      },
+      body
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      return data.choices[0].message.content;
+    }
+
+    const errText = await res.text();
+    lastErr = new Error('Groq ' + res.status + ': ' + errText);
+
+    // Rate limit → wait and retry
+    if (res.status === 429 && attempt < maxAttempts) {
+      // Parse "try again in X.Ys" if present, else default wait
+      let waitMs = 9000 * attempt;
+      const m = errText.match(/try again in ([\d.]+)\s*s/i);
+      if (m) waitMs = Math.ceil(parseFloat(m[1]) * 1000) + 500;
+      if (statusPill) statusPill.textContent = 'Waiting ' + Math.ceil(waitMs / 1000) + 's…';
+      await sleep(waitMs);
+      if (statusPill) statusPill.textContent = 'Thinking…';
+      continue;
+    }
+
+    throw lastErr;
   }
-  const data = await res.json();
-  return data.choices[0].message.content;
+  throw lastErr || new Error('Groq request failed');
 }
 
 async function callOpenAI(userContent) {
